@@ -154,7 +154,7 @@ def run():
         port = config.get('DB', 'port')
         conn = psycopg2.connect(dbname=dbname,user=user, password=password, host=host, port=port)
         cur = conn.cursor()       
-        cur.execute("SELECT id, url_yandex FROM clientstat_clientmodel where id=5")
+        cur.execute("SELECT id, url_yandex FROM clientstat_clientmodel;")
         yandex_list = cur.fetchall()
         
         main_pool = Pool(processes=1)
