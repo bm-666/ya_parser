@@ -166,28 +166,28 @@ def scroll(content, cnt_comments, class_name):
 
 
 def start_parser():
-
-    config = ConfigParser()
-    config.read("config.ini")
-    dbname = config.get('DB', 'dbname')
-    user = config.get('DB', 'user')
-    password = config.get('DB', 'password')
-    host = config.get('DB', 'host')
-    port = config.get('DB', 'port')
-    conn = psycopg2.connect(dbname=dbname,user=user, password=password,host=host, port=port)
-    cur = conn.cursor()       
-    cur.execute("SELECT id, url_yandex FROM clientstat_clientmodel;")
-    yandex_list = [type_parser(cur, i, config) for i in cur.fetchall()]     
-    main_pool = Pool(processes=2)
-    result = main_pool.map(yandex_parse, yandex_list)
-    for res in result: 
-        db_execute(res[0],res[1], cur)                
+    try:
+        config = ConfigParser()
+        config.read("config.ini")
+        dbname = config.get('DB', 'dbname')
+        user = config.get('DB', 'user')
+        password = config.get('DB', 'password')
+        host = config.get('DB', 'host')
+        port = config.get('DB', 'port')
+        conn = psycopg2.connect(dbname=dbname,user=user, password=password,host=host, port=port)
+        cur = conn.cursor()       
+        cur.execute("SELECT id, url_yandex FROM clientstat_clientmodel;")
+        yandex_list = [type_parser(cur, i, config) for i in cur.fetchall()]     
+        main_pool = Pool(processes=2)
+        result = main_pool.map(yandex_parse, yandex_list)
+        for res in result: 
+            db_execute(res[0],res[1], cur)                
     
-    '''except Exception as error:
+    except Exception as error:
         print(error)
-    finally:'''
-    conn.commit()
-    conn.close()
+    finally:
+        conn.commit()
+        conn.close()
 
 
 if __name__ == '__main__':
