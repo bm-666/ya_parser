@@ -2,14 +2,16 @@ from configparser import ConfigParser
 from datetime import datetime as dt
 from multiprocessing import Pool, Process
 import time
+import random
 
 import psycopg2
-from  selenium import webdriver
 from selenium.webdriver.chrome import options
 from selenium.webdriver.common import desired_capabilities, keys
-
+from seleniumwire import webdriver
 
     
+
+
 def date_convert(args):
     try:
         '''Конвертация даты принимает строку с датой коментария '''
@@ -45,9 +47,15 @@ def yandex_parse(url_tuple):
         js_code = "return document.querySelector('.scroll__scrollbar-thumb').getBoundingClientRect();"
         date_parse = dt.strftime(dt.now(), '%d.%m.%Y')
         class_name = 'business-reviews-card-view__review'
-        options = webdriver.ChromeOptions()
-        options.add_argument('headless')
-        content = webdriver.Chrome(options=options)
+        options = {
+            "proxy" : {
+                "https" : url_tuple[3]
+            }
+        }
+        print(options)
+        options_chrome = webdriver.ChromeOptions()
+        options_chrome.add_argument('headless')
+        content = webdriver.Chrome(options=options_chrome,seleniumwire_options=options)
         content.get(url)
         raiting = content.find_element_by_class_name('business-rating-badge-view__rating-text').text
         content.execute_script("return document.querySelector('._name_reviews').click();")
@@ -96,13 +104,15 @@ def yandex_parse(url_tuple):
     return result
 
 
-def type_parser(cursor, el):
+def type_parser(cursor, el, config):
+    "Функция принимает cursor, id клиента, config возвращает кортеж"
     cursor.execute(f"SELECT count(*) FROM clientstat_commentsmodel WHERE  comments_key_id={el[0]};")
+    proxy_config = f"https://{config.get('PROXY', 'proxy_login')}:{config.get('PROXY', 'proxy_password')}@{random.choice(config.get('PROXY', 'proxy_list').split(','))}"
     result_count = cursor.fetchone()
     if result_count[0] > 0:
-        return el + (True,)
+        return el + (True, proxy_config)
     else:
-        return el + (False,)    
+        return el + (False, proxy_config)    
 
     
 def db_execute(result_parser,  count_result, cursor):
@@ -156,28 +166,28 @@ def scroll(content, cnt_comments, class_name):
 
 
 def start_parser():
-    try:
-        config = ConfigParser()
-        config.read("config.ini")
-        dbname = config.get('DB', 'dbname')
-        user = config.get('DB', 'user')
-        password = config.get('DB', 'password')
-        host = config.get('DB', 'host')
-        port = config.get('DB', 'port')
-        conn = psycopg2.connect(dbname=dbname,user=user, password=password, host=host, port=port)
-        cur = conn.cursor()       
-        cur.execute("SELECT id, url_yandex FROM clientstat_clientmodel;")
-        yandex_list = [type_parser(cur, i) for i in cur.fetchall()]     
-        main_pool = Pool(processes=2)
-        result = main_pool.map(yandex_parse, yandex_list)
-        for res in result: 
-            db_execute(res[0],res[1], cur)                
+
+    config = ConfigParser()
+    config.read("config.ini")
+    dbname = config.get('DB', 'dbname')
+    user = config.get('DB', 'user')
+    password = config.get('DB', 'password')
+    host = config.get('DB', 'host')
+    port = config.get('DB', 'port')
+    conn = psycopg2.connect(dbname=dbname,user=user, password=password,host=host, port=port)
+    cur = conn.cursor()       
+    cur.execute("SELECT id, url_yandex FROM clientstat_clientmodel;")
+    yandex_list = [type_parser(cur, i, config) for i in cur.fetchall()]     
+    main_pool = Pool(processes=2)
+    result = main_pool.map(yandex_parse, yandex_list)
+    for res in result: 
+        db_execute(res[0],res[1], cur)                
     
-    except Exception as error:
+    '''except Exception as error:
         print(error)
-    finally:
-        conn.commit()
-        conn.close()
+    finally:'''
+    conn.commit()
+    conn.close()
 
 
 if __name__ == '__main__':
