@@ -56,11 +56,6 @@ def yandex_parse(url_tuple):
     userid = url_tuple[0]
     url = url_tuple[1]
     count_result = url_tuple[2]
-    '''options = {
-            "proxy" : {
-                "https" : url_tuple[3]
-            }
-        }'''
     js_code = "return document.querySelector('.scroll__scrollbar-thumb')getBoundingClientRect();"
     js_code_select_type = 0       
     js_code_select_new = "return document.querySelectorAll('.rating-ranking-view__popup-line')[1].click();"
@@ -68,8 +63,8 @@ def yandex_parse(url_tuple):
     class_name = 'business-reviews-card-view__review'
     try:
         options_chrome = webdriver.ChromeOptions()
-        options_chrome.add_argument('headless')
-        options_chrome.add_argument("window-size=2560,1440")
+        options_chrome.add_argument('--headless')
+        options_chrome.add_argument('--no-sandbox')
         content = webdriver.Chrome(options=options_chrome)
         content.get(url)
         raiting = content.find_element_by_class_name('business-rating-badge-view__rating-text').text
@@ -166,7 +161,7 @@ def func_insert_comment(element,cursor, userid):
 def start_parser():
     try:
         config = ConfigParser()
-        config.read("/home/bm666/Рабочий стол/test_parse/config.ini")
+        config.read('config.ini')
         dbname = config.get('DB', 'dbname')
         user = config.get('DB', 'user')
         password = config.get('DB', 'password')
