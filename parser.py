@@ -8,6 +8,7 @@ import psycopg2
 from selenium.webdriver import chrome
 from selenium.webdriver.chrome import options
 from selenium.webdriver.common import desired_capabilities, keys
+from selenium.webdriver.common.by import By
 from seleniumwire import webdriver
   
     
@@ -31,23 +32,20 @@ def date_convert(args):
 
 def like(react, element):
     '''Функция получения количество Like/Dislike'''
-    reaction = element.find_elements_by_class_name('business-reactions-view__container')[react].text
+    reaction = element.find_elements(By.CLASS_NAME,'business-reactions-view__container')[react].text
     if reaction != "":
         return reaction
     else:
-        return 0        
-        return result_comments     
-        return result_comments     
-        return result_comments     
+        return 0   
 
 def scroll(class_name, content):
         '''Функция скроллинга страницы.'''
         coord = 0
-        while len(content.find_elements_by_class_name(class_name)) <= 50:
-            coord = coord + 350
+        while len(content.find_elements(By.CLASS_NAME, class_name)) < 50:
+            coord = coord + 450
             content.execute_script(f"document.querySelector('.scroll__container').scrollTo(0, {coord});")
-            time.sleep(2)
-        result_comments = content.find_elements_by_class_name(class_name)
+            time.sleep(5)
+        result_comments = content.find_elements(By.CLASS_NAME, class_name)
         return result_comments 
 
 
@@ -56,8 +54,7 @@ def yandex_parse(url_tuple):
     userid = url_tuple[0]
     url = url_tuple[1]
     count_result = url_tuple[2]
-    js_code = "return document.querySelector('.scroll__scrollbar-thumb')getBoundingClientRect();"
-    js_code_select_type = 0       
+    js_code = "return document.querySelector('.scroll__scrollbar-thumb')getBoundingClientRect();"      
     js_code_select_new = "return document.querySelectorAll('.rating-ranking-view__popup-line')[1].click();"
     date_parse = dt.strftime(dt.now(), '%d.%m.%Y')
     class_name = 'business-reviews-card-view__review'
@@ -67,11 +64,11 @@ def yandex_parse(url_tuple):
         options_chrome.add_argument('--no-sandbox')
         content = webdriver.Chrome(options=options_chrome)
         content.get(url)
-        raiting = content.find_element_by_class_name('business-rating-badge-view__rating-text').text
+        raiting = content.find_element(By.CLASS_NAME, 'business-rating-badge-view__rating-text').text
         content.execute_script("return document.querySelector('._name_reviews').click();")
         time.sleep(5)
         content.execute_script("document.querySelector('.scroll__container').scrollTo(0, 1000);")
-        count_comments = int(content.find_elements_by_class_name('card-section-header__title')[-1].text.split()[0])
+        count_comments = int(content.find_elements(By.CLASS_NAME,'card-section-header__title')[-1].text.split()[0])
         parse_result = {
             userid:{
                 "date": date_parse,
@@ -82,8 +79,9 @@ def yandex_parse(url_tuple):
             }               
         content.execute_script('return document.querySelectorAll(".business-reviews-card-view__ranking")[1].querySelector(".flip-icon").click();')
         content.execute_script(js_code_select_new)
-        content.execute_script("document.querySelector('.scroll__container').scrollTo(0, 1000);")
-        time.sleep(3)
+        time.sleep(5)
+        content.execute_script("document.querySelector('.scroll__container').scrollTo(0, 200);")
+        time.sleep(5)
         result_comments = scroll(class_name, content)
         cmtid = 0
         for item in result_comments:
@@ -91,9 +89,9 @@ def yandex_parse(url_tuple):
             if item.text == "":
                 continue
             else:
-                date_comment = item.find_element_by_class_name("business-review-view__date").text
-                author = item.find_element_by_tag_name('span').text
-                text = item.find_element_by_class_name("business-review-view__body-text").text
+                date_comment = item.find_element(By.CLASS_NAME,"business-review-view__date").text
+                author = item.find_element(By.TAG_NAME,'span').text
+                text = item.find_element(By.CLASS_NAME,'business-review-view__body-text').text
                 parse_result[userid]['comments'].append(
                 ('yandex', cmtid, 'Опубликован',
                 author,
