@@ -2,7 +2,7 @@ from configparser import ConfigParser
 from datetime import datetime as dt
 from multiprocessing import Pool
 import time
-import random
+
 
 import psycopg2
 from selenium.webdriver import chrome
@@ -53,7 +53,6 @@ def yandex_parse(url_tuple):
     '''Основная функция парсинга ЯндексКарт'''
     userid = url_tuple[0]
     url = url_tuple[1]
-    count_result = url_tuple[2]
     js_code = "return document.querySelector('.scroll__scrollbar-thumb')getBoundingClientRect();"      
     js_code_select_new = "return document.querySelectorAll('.rating-ranking-view__popup-line')[1].click();"
     date_parse = dt.strftime(dt.now(), '%d.%m.%Y')
@@ -85,10 +84,10 @@ def yandex_parse(url_tuple):
         result_comments = scroll(class_name, content)
         cmtid = 0
         for item in result_comments:
-            cmtid += 1
             if item.text == "":
                 continue
             else:
+                cmtid += 1
                 date_comment = item.find_element(By.CLASS_NAME,"business-review-view__date").text
                 author = item.find_element(By.TAG_NAME,'span').text
                 text = item.find_element(By.CLASS_NAME,'business-review-view__body-text').text
@@ -103,45 +102,21 @@ def yandex_parse(url_tuple):
     except Exception as e:
         print(e)
     finally:
-        content.close()
-    result = (parse_result, count_result)    
-    return result
-
-
-def type_parser(cursor, el, config):
-    "Функция принимает cursor, id клиента, config возвращает кортеж"
-    cursor.execute(f"SELECT count(*) FROM comments WHERE  comments_key_id={el[0]};")
-    proxy_config = ""
-    result_count = cursor.fetchone()
-    if result_count[0] > 0:
-        return el + (True, proxy_config)
-    else:
-        return el + (False, proxy_config)    
+        content.close()    
+    return parse_result
 
     
-def db_execute(result_parser,  count_result, cursor):
-    '''Вставка/Обновление в БД принимает результат парсинга dict, cursor'''
+def db_execute(result_parser, cursor):
+    '''Вставка БД принимает результат парсинга dict, cursor'''
     for el in result_parser:
         cursor.execute(
             "INSERT INTO yandex(date_parse, raiting, count_comments, yandex_key_id) VALUES (%s,%s, %s, %s);",
             (result_parser[el]['date'], result_parser[el]['raiting'],result_parser[el]['count_comments'], el)
             )        
-        if count_result is False:
-            for comment in result_parser[el]['comments']: 
-                cursor.execute(
-                    "INSERT INTO comments (comment_resurs, comment_number, status_coment, author_comment, text_comment, date_comment, mylike, dislike, comments_key_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s);",
-                    (comment + (el,)))
-        else:
-            coments_select = f"SELECT comment_resurs, comment_number, status_coment, author_comment, text_comment, date_comment FROM comments WHERE comments_key_id={el} ;"  
-            cursor.execute(coments_select)
-            select_result = cursor.fetchall()           
-            
-            for cmt in result_parser[0][el]['comments']:
-                if cmt[0:6] in select_result:
-                    func_update_comment(cmt, cursor)
-                else:
-                    func_insert_comment(cmt, cursor, el)    
-
+        for comment in result_parser[el]['comments']: 
+            cursor.execute(
+                "INSERT INTO comments (comment_resurs, comment_number, status_coment, author_comment, text_comment, date_comment,mylike, dislike, comments_key_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s);",
+               (comment + (el,)))    
 
 def func_update_comment(element, cursor):
     '''Обновление коменнатрия если он уже есть в БД'''
@@ -168,12 +143,12 @@ def start_parser():
         conn = psycopg2.connect(dbname=dbname,user=user, password=password,host=host, port=port)
         cur = conn.cursor()       
         cur.execute("SELECT id, url_yandex FROM clients;")
-        yandex_list = [type_parser(cur, i, config) for i in cur.fetchall()]     
-        main_pool = Pool(processes=2)
+        yandex_list = [i for i in cur.fetchall()]     
+        main_pool = Pool(2)
         result = main_pool.map(yandex_parse, yandex_list)
         for res in result: 
-            db_execute(res[0],res[1], cur)                
-    
+            db_execute(res, cur)
+                            
     except Exception as error:
         print(error)
     finally:
