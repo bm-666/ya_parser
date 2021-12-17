@@ -82,7 +82,7 @@ def yandex_parse(url_tuple):
         content.execute_script("document.querySelector('.scroll__container').scrollTo(0, 200);")
         time.sleep(5)
         result_comments = scroll(class_name, content)
-        cmtid = 0
+        cmtid = url_tuple[2]
         for item in result_comments:
             if item.text == "":
                 continue
@@ -110,7 +110,7 @@ def db_execute(result_parser, cursor):
     '''Вставка БД принимает результат парсинга dict, cursor'''
     for el in result_parser:
         cursor.execute(
-            "INSERT INTO yandex(date_parse, raiting, count_comments, yandex_key_id) VALUES (%s,%s, %s, %s);",
+            "INSERT INTO yandex(date_parse, raiting, count_comments, table_key_id) VALUES (%s,%s, %s, %s);",
             (result_parser[el]['date'], result_parser[el]['raiting'],result_parser[el]['count_comments'], el)
             )        
         for comment in result_parser[el]['comments']: 
@@ -142,7 +142,9 @@ def start_parser():
         port = config.get('DB', 'port')
         conn = psycopg2.connect(dbname=dbname,user=user, password=password,host=host, port=port)
         cur = conn.cursor()       
-        cur.execute("SELECT id, url_yandex FROM clients;")
+        cur.execute(
+            "SELECT c.id, c.url_yandex, (SELECT comment_number FROM comments WHERE comments_key_id = c.id ORDER BY comment_number DESC LIMIT 1) FROM clients c;"
+            )
         yandex_list = [i for i in cur.fetchall()]     
         main_pool = Pool(2)
         result = main_pool.map(yandex_parse, yandex_list)
