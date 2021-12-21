@@ -38,14 +38,23 @@ def like(react, element):
     else:
         return 0   
 
-def scroll(class_name, content):
+def scroll(class_name, content, count_cooments):
         '''Функция скроллинга страницы.'''
+        
+        
+        if count_cooments < 50:
+            cmt = count_cooments
+        else:
+            cmt = 50          
         coord = 0
-        while len(content.find_elements(By.CLASS_NAME, class_name)) < 50:
-            coord = coord + 450
+        result = set()       
+        while len(result) < cmt:
+            coord = coord + 100
             content.execute_script(f"document.querySelector('.scroll__container').scrollTo(0, {coord});")
             time.sleep(5)
-        result_comments = content.find_elements(By.CLASS_NAME, class_name)
+            elements = {i for i in content.find_elements(By.CLASS_NAME, class_name)}
+            result = result.union(elements)
+        result_comments = [i for i in result]
         return result_comments 
 
 
@@ -78,12 +87,12 @@ def yandex_parse(url_tuple):
             }               
         content.execute_script('return document.querySelectorAll(".business-reviews-card-view__ranking")[1].querySelector(".flip-icon").click();')
         content.execute_script(js_code_select_new)
-        time.sleep(5)
-        content.execute_script("document.querySelector('.scroll__container').scrollTo(0, 200);")
-        time.sleep(5)
-        result_comments = scroll(class_name, content)
+        time.sleep(7)
+        '''content.execute_script("document.querySelector('.scroll__container').scrollTo(0, 200);")'''
+        result_comments = scroll(class_name, content, count_comments)
         cmtid = url_tuple[2]
         for item in result_comments:
+            stars = 5
             if item.text == "":
                 continue
             else:
@@ -91,13 +100,17 @@ def yandex_parse(url_tuple):
                 date_comment = item.find_element(By.CLASS_NAME,"business-review-view__date").text
                 author = item.find_element(By.TAG_NAME,'span').text
                 text = item.find_element(By.CLASS_NAME,'business-review-view__body-text').text
+                stars_empty=item.find_element(By.CLASS_NAME, 'business-rating-badge-view__stars').find_elements(
+                    By.CLASS_NAME, '_empty')
+                stars = stars - len(stars_empty)
                 parse_result[userid]['comments'].append(
                 ('yandex', cmtid, 'Опубликован',
                 author,
                 text,
                 date_convert(date_comment),
                 like(0, item),
-                like(1, item)
+                like(1, item),
+                stars
                 ))    
     except Exception as e:
         print(e)
@@ -115,7 +128,7 @@ def db_execute(result_parser, cursor):
             )        
         for comment in result_parser[el]['comments']: 
             cursor.execute(
-                "INSERT INTO comments (comment_resurs, comment_number, status_coment, author_comment, text_comment, date_comment,mylike, dislike, comments_key_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s);",
+                "INSERT INTO comments (comment_resurs, comment_number, status_comment, author_comment, text_comment, date_comment,mylike, dislike,comment_stars, comment_key_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);",
                (comment + (el,)))    
 
 def func_update_comment(element, cursor):
@@ -126,10 +139,15 @@ def func_update_comment(element, cursor):
 
 def func_insert_comment(element,cursor, userid):
     '''Функция вставка коментариев'''
-    sql_insert = "INSERT INTO comments (comment_resurs, comment_number, status_coment, author_comment, text_comment, date_comment, mylike, dislike, comments_key_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s);"
+    sql_insert = "INSERT INTO comments (comment_resurs, comment_number, status_coment, author_comment, text_comment, date_comment, mylike, dislike, comment_key_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s);"
     element = element + (userid,)
     cursor.execute(sql_insert, element)
 
+
+def count_comment(args):
+    if args[2] is None:
+        args = args[0:2]+(0,)
+    return args
 
 def start_parser():
     try:
@@ -143,9 +161,9 @@ def start_parser():
         conn = psycopg2.connect(dbname=dbname,user=user, password=password,host=host, port=port)
         cur = conn.cursor()       
         cur.execute(
-            "SELECT c.id, c.url_yandex, (SELECT comment_number FROM comments WHERE comments_key_id = c.id ORDER BY comment_number DESC LIMIT 1) FROM clients c;"
+            "SELECT c.id, c.url_yandex, (SELECT comment_number FROM comments WHERE comment_key_id = c.id ORDER BY comment_number DESC LIMIT 1) FROM clients c;"
             )
-        yandex_list = [i for i in cur.fetchall()]     
+        yandex_list = [count_comment(i) for i in cur.fetchall()]
         main_pool = Pool(2)
         result = main_pool.map(yandex_parse, yandex_list)
         for res in result: 
