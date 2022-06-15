@@ -1,7 +1,15 @@
-from configparser import ConfigParser
-from datetime import datetime as dt
-from multiprocessing import Pool
+import requests
 import time
+import json
+import os
+import math
+from socket import timeout
+from configparser import ConfigParser
+from datetime import date, datetime as dt
+from multiprocessing import Pool
+from requests import Session
+from urllib.parse import urlparse, urlencode
+
 
 import psycopg2
 from selenium.webdriver import chrome
@@ -14,10 +22,42 @@ from seleniumwire import webdriver
 
 
 
+
+
+
+comments = {}
+
+def connect_db(func):
+    '''
+    Декоратор возвращает соединение с бд.
+    '''
+    def wrap(*args):
+        config = ConfigParser()
+        config.read('config.ini')
+        dbname = config.get('DB', 'dbname')
+        user = config.get('DB', 'user')
+        password = config.get('DB', 'password')
+        host = config.get('DB', 'host')
+        port = config.get('DB', 'port')
+        conn = psycopg2.connect(dbname=dbname, user=user,
+                                password=password, host=host, port=port)
+
+        conn.autocommit = True
+        func(conn,*args)
+    return wrap
+
+def count_pages(count_comments:int):
+    page = 1
+    comments_page = 50
+    while count_comments > comments_page:
+        page += 1
+        count_comments -= comments_page
+    
+    return page
+
 def load_element(driver, locator):
     # Ожидание загрузки элемента    
-    
-    timeout = 30
+    timeout = 40
     try:
         element = WebDriverWait(driver, timeout).until(
             EC.presence_of_element_located(locator))
@@ -26,9 +66,7 @@ def load_element(driver, locator):
     return element
 
 def load_elements(driver, locator):
-    #Ожидание загрузки элементов
-    
-    timeout = 20
+    timeout = 30
     try:
         elements = WebDriverWait(driver, timeout).until(EC.presence_of_all_elements_located(locator))
     except Exception:
@@ -38,22 +76,16 @@ def load_elements(driver, locator):
 
 def date_convert(args:str):
     # Приведение даты к формату DD.MM.YYYY
-    
-    month = {'января': '01', 'февраля': '02', 'марта': '03',
-            'апреля': '04', 'мая': '05', 'июня': '06',
-            'июля': '07', 'августа': '08', 'сентября': '09',
-            'октября': '10', 'ноября': '11', 'декабря': '12'
-            }
     try:
-        list_args = args.split()    
+        list_args = args.split()
+        month = {'января': '01', 'февраля': '02', 'марта': '03', 'апреля': '04', 'мая': '05', 'июня': '06',
+                 'июля': '07', 'августа': '08', 'сентября': '09', 'октября': '10', 'ноября': '11', 'декабря': '12'}
         list_args[1] = month[list_args[1]]
-        
         if len(list_args) > 2:
-            new_date = '.'.join(list_args) 
+            new_date = '.'.join(list_args)
         elif len(list_args) == 2:
             list_args.append(str(dt.now().year))
             new_date = '.'.join(list_args)
-    
     except IndexError:
         return
 
@@ -61,8 +93,7 @@ def date_convert(args:str):
 
 
 def like(react, element):
-    #Функция получения количество Like/Dislike
-    
+    '''Функция получения количество Like/Dislike'''
     reaction = element.find_elements(
         By.CLASS_NAME, 'business-reactions-view__container')[react].text
     if reaction != "":
@@ -71,19 +102,20 @@ def like(react, element):
         return 0
 
 
-def scroll(class_name, content, count_cooments):
+
+def scroll(class_name, content, count_comments):
     #Прокручивание динамически загружаемых коментариев    
+    comments = []
     
     result = set()
     load = load_element(content,(By.CLASS_NAME, class_name))
     
     if load is  not None:
-        if count_cooments < 50:
-            cmt = count_cooments
+        if count_comments < 50:
+            cmt = count_comments
         else:
             cmt = 50
         coord = 0
-        
         while len(result) < cmt:
             coord = coord + 100
             content.execute_script(
@@ -94,11 +126,12 @@ def scroll(class_name, content, count_cooments):
             result = result.union(elements)
         
         result_comments = [i for i in result]
+        
     
     return result_comments
 
 def driver(width=1366,hight=768):
-    # Возвращает webdriver обязательные параметры ширина высота браузера
+    # Возвращает instance webdriver обязательные параметры ширина высота браузера
     
     options_chrome = webdriver.ChromeOptions()
     options_chrome.add_argument('--headless')
@@ -137,7 +170,6 @@ def yandex_parse(args:tuple):
 
         content.execute_script(
             "return document.querySelector('._name_reviews').click();")
-        
         count_comments = int(load_element(content, (By.CLASS_NAME, 'business-reviews-card-view__title')).text.split()[0])
         content.execute_script(
             "document.querySelector('.scroll__container').scrollTo(0, 1000);")             
@@ -152,17 +184,14 @@ def yandex_parse(args:tuple):
         }
         
         default_reviews = load_element(content, class_css_flip)
-        
-        if default_reviews is not None:
-            try:
+        time.sleep(10)
+        try:
+            if default_reviews is not None:
                 default_reviews.find_element(By.CLASS_NAME, 'flip-icon').click()
-            
-            except Exception:
-                content.execute_script(js_code_click_sort_views)
-                content.execute_script(js_code_select_views_new)
-        
+        except:
+            content.execute_script(js_code_click_sort_views)
+            content.execute_script(js_code_select_views_new)
         header = load_element(content, css_class_header)
-        
         if header is not None:
             result_comments = scroll(class_name, content, count_comments)
         
@@ -181,17 +210,15 @@ def yandex_parse(args:tuple):
                     By.CLASS_NAME, '_empty')
                 stars = stars - len(stars_empty)
                 parse_result[userid]['comments'].append(
-                    ('yandex', cmtid, 'Опубликован',
-                     author,
-                     text,
-                     date_convert(date_comment),
-                     like(0, item),
-                     like(1, item),
-                     stars
-                     ))
+                    (
+                    "yandex", cmtid, 'Опубликован', author, text,
+                    date_convert(date_comment),like(0, item), like(1, item),
+                    stars
+                ))
     
+        removed_reviews(parse_result[userid]["comments"],userid)    
     except Exception as e:
-        print(e)
+        print(e, url)
     
     finally:
         content.close()
@@ -200,8 +227,7 @@ def yandex_parse(args:tuple):
 
 
 def db_execute(result_parser, cursor):
-    
-    #Вставка в  БД принимает результат парсинга dict, cursor
+    '''Вставка БД принимает результат парсинга dict, cursor'''
     for el in result_parser:
         cursor.execute(
             "INSERT INTO yandex(date_parse, raiting, count_comments, table_key_id) VALUES (%s,%s, %s, %s);",
@@ -213,21 +239,34 @@ def db_execute(result_parser, cursor):
                 "INSERT INTO comments (comment_resurs, comment_number, status_comment, author_comment, text_comment, date_comment,mylike, dislike,comment_stars, comment_key_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);",
                 (comment + (el,)))
 
+                            
 
-def func_update_comment(element, cursor):
-    #Обновление коменнатрия если он уже есть в БД
+
+@connect_db
+def removed_reviews(*args):
+    #Находим удаленные отзывы и обновляем забись в бд
+    SQL_SELECT_COMMENTS = "SELECT comment_resurs, author_comment, text_comment FROM comments WHERE status_comment='Опубликован' AND comment_key_id=%s;"
     
-    sql_update = "UPDATE comments SET mylike=%s, dislike=%s WHERE comment_number={}".format(
-        element[1])
-    cursor.execute(sql_update, (element[6], element[7]))
-
-
-def func_insert_comment(element, cursor, userid):
-    #Функция вставка коментариев
+    connect, new_result, userid = args
+    cur = connect.cursor()
+    new_result = set((i[0],i[3],i[4]) for i in new_result)
+    cur.execute(SQL_SELECT_COMMENTS, (userid,))
+    old_comments = set(cur.fetchall())
+    reviews = old_comments.difference(new_result)
     
-    sql_insert = "INSERT INTO comments (comment_resurs, comment_number, status_coment, author_comment, text_comment, date_comment, mylike, dislike, comment_key_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s);"
-    element = element + (userid,)
-    cursor.execute(sql_insert, element)
+    if len(reviews) > 0:
+        update_remowed_reviews(cur, reviews)
+
+    
+
+def update_remowed_reviews(cursor, args):
+    #Обновляем коментарии устанавливаем дату удаления и статус принимает cursor,  и множество кортежей коментариев на удаление.
+    date_delete =  dt.strftime(dt.now(), '%d.%m.%Y')
+    SQL_UPDATE_DELETE_REVIEWS = "UPDATE comments SET status_comment='Удален', date_delete=%s WHERE comment_resurs=%s AND author_comment=%s AND text_comment=%s"
+    for i in args:
+        cursor.execute(SQL_UPDATE_DELETE_REVIEWS, ((date_delete,)+i))
+
+        
 
 
 def count_comment(args):
@@ -235,37 +274,24 @@ def count_comment(args):
         args = args[0:2]+(0,)
     return args
 
-
-def start_parser():
-    # Запускаем парсинг
     
+
+@connect_db
+def start_parser(*args):
     try:
-        config = ConfigParser()
-        config.read('config.ini')
-        dbname = config.get('DB', 'dbname')
-        user = config.get('DB', 'user')
-        password = config.get('DB', 'password')
-        host = config.get('DB', 'host')
-        port = config.get('DB', 'port')
-        conn = psycopg2.connect(dbname=dbname, user=user,
-                                password=password, host=host, port=port)
+        conn = args[0]
         cur = conn.cursor()
         cur.execute(
             "SELECT c.id, c.url_yandex, (SELECT comment_number FROM comments WHERE comment_key_id = c.id ORDER BY comment_number DESC LIMIT 1) FROM clients c;"
         )
         yandex_list = [count_comment(i) for i in cur.fetchall()]
-        
-        with Pool(2) as pool:
-            results = pool.map(yandex_parse, yandex_list)
-        
-        for result in results: 
-            db_execute(result, cur)    
-        
+        with Pool(1) as pool:
+            result = pool.map(yandex_parse, yandex_list)
+        for res in result: 
+            db_execute(res, cur)    
     except Exception as error:
         print(error)
-    
     finally:
-        conn.commit()
         conn.close()
 
 
