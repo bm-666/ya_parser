@@ -66,7 +66,7 @@ def load_element(driver, locator):
     return element
 
 def load_elements(driver, locator):
-    timeout = 30
+    timeout = 40
     try:
         elements = WebDriverWait(driver, timeout).until(EC.presence_of_all_elements_located(locator))
     except Exception:
@@ -216,6 +216,8 @@ def yandex_parse(args:tuple):
                     stars
                 ))
     
+        if len(parse_result) == 0:
+            return 0
         removed_reviews(parse_result[userid]["comments"],userid)    
     except Exception as e:
         print(e, url)
@@ -228,6 +230,9 @@ def yandex_parse(args:tuple):
 
 def db_execute(result_parser, cursor):
     '''Вставка БД принимает результат парсинга dict, cursor'''
+    if result_parser == 0:
+        return 
+    
     for el in result_parser:
         cursor.execute(
             "INSERT INTO yandex(date_parse, raiting, count_comments, table_key_id) VALUES (%s,%s, %s, %s);",
@@ -282,7 +287,7 @@ def start_parser(*args):
         conn = args[0]
         cur = conn.cursor()
         cur.execute(
-            "SELECT c.id, c.url_yandex, (SELECT comment_number FROM comments WHERE comment_key_id = c.id ORDER BY comment_number DESC LIMIT 1) FROM clients c;"
+            "SELECT c.id, c.url_yandex, (SELECT comment_number FROM comments WHERE comment_key_id = c.id ORDER BY comment_number DESC LIMIT 1) FROM clients c WHERE c.status='active';"
         )
         yandex_list = [count_comment(i) for i in cur.fetchall()]
         with Pool(1) as pool:
